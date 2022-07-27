@@ -17,7 +17,6 @@
 #include <openssl/whrlpool.h>
 
 #include <zlib.h>
-#include "crc32.hpp"
 
 constexpr auto KiB = 1024;
 constexpr auto MiB = KiB * 1024;
