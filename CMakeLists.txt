@@ -9,5 +9,5 @@ find_package(OpenSSL REQUIRED)
 find_package(benchmark REQUIRED)
 add_executable(cryptographic-hash-benchmark main.cpp)
 
-target_link_libraries(cryptographic-hash-benchmark benchmark::benchmark -lcryptopp OpenSSL::Crypto)
+target_link_libraries(cryptographic-hash-benchmark benchmark::benchmark -lcryptopp -lz OpenSSL::Crypto)
 install(TARGETS cryptographic-hash-benchmark RUNTIME DESTINATION bin)

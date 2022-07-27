@@ -3,9 +3,11 @@
 #include <benchmark/benchmark.h>
 #include <cryptopp/cryptlib.h>
 
-#include <cryptopp/sha.h>
+#include <cryptopp/adler32.h>
+#include <cryptopp/crc.h>
 #include <cryptopp/md4.h>
 #include <cryptopp/md5.h>
+#include <cryptopp/sha.h>
 #include <cryptopp/whrlpool.h>
 
 #include <openssl/md2.h>
@@ -13,6 +15,9 @@
 #include <openssl/md5.h>
 #include <openssl/sha.h>
 #include <openssl/whrlpool.h>
+
+#include <zlib.h>
+#include "crc32.hpp"
 
 constexpr auto KiB = 1024;
 constexpr auto MiB = KiB * 1024;
@@ -30,6 +35,8 @@ const static auto DATASET = // 256 MiB of vector data, filled with 0,1,2,...,255
     }(); // inplace lambda
 
 enum class Hash {
+    Adler,
+    CRC32,
     Whirlpool,
     MD4,
     MD5,
@@ -58,6 +65,8 @@ std::vector<unsigned char> cryptopp_hash(const unsigned char *data, const std::s
 template <Hash type>
 std::vector<unsigned char> cryptopp_algo_wrapper(const unsigned char *data, const std::size_t size) {
     switch (type) {
+        case Hash::Adler: return cryptopp_hash<CryptoPP::Adler32>(data, size);
+        case Hash::CRC32: return cryptopp_hash<CryptoPP::CRC32>(data, size);
         case Hash::Whirlpool: return cryptopp_hash<CryptoPP::Whirlpool>(data, size);
         case Hash::MD4: return cryptopp_hash<CryptoPP::Weak::MD4>(data, size);
         case Hash::MD5: return cryptopp_hash<CryptoPP::Weak::MD5>(data, size);
@@ -71,6 +80,16 @@ std::vector<unsigned char> cryptopp_algo_wrapper(const unsigned char *data, cons
 template <Hash>
 std::vector<unsigned char> openssl_algo_wrapper(const unsigned char *data, const std::size_t size) {
     std::terminate();
+}
+
+template <>
+std::vector<unsigned char> openssl_algo_wrapper<Hash::Adler>(const unsigned char *, const std::size_t) {
+    return {};
+}
+
+template <>
+std::vector<unsigned char> openssl_algo_wrapper<Hash::CRC32>(const unsigned char *, const std::size_t) {
+    return {};
 }
 
 template <>
@@ -133,9 +152,11 @@ template <Hash algo>
 void cryptopp(benchmark::State &state) {
     while (state.KeepRunning()) {
         const auto offset = DATASET.data() + (state.bytes_processed() % DATASET_SIZE);
-        const auto ret = cryptopp_algo_wrapper<algo>(offset, DATASET_CHUNK);
-        static_cast<void>(ret);
+        const auto result = cryptopp_algo_wrapper<algo>(offset, DATASET_CHUNK); // crypto++
+        if (result.size() == 0)
+            state.SkipWithError("skip, no implementation");
         state.SetBytesProcessed(state.bytes_processed() + DATASET_CHUNK);
+        benchmark::DoNotOptimize(result);
     }
 }
 
@@ -143,12 +164,38 @@ template <Hash algo>
 void openssl(benchmark::State &state) {
     while (state.KeepRunning()) {
         const auto offset = DATASET.data() + (state.bytes_processed() % DATASET_SIZE);
-        const auto ret = openssl_algo_wrapper<algo>(offset, DATASET_CHUNK);
-        static_cast<void>(ret);
+        const auto result = openssl_algo_wrapper<algo>(offset, DATASET_CHUNK); // openssl
+        if (result.size() == 0)
+            state.SkipWithError("skip, no implementation");
         state.SetBytesProcessed(state.bytes_processed() + DATASET_CHUNK);
+        benchmark::DoNotOptimize(result);
     }
 }
 
+void zlib_crc32(benchmark::State &state) {
+    while (state.KeepRunning()) {
+        const auto offset = DATASET.data() + (state.bytes_processed() % DATASET_SIZE);
+        const auto adler = adler32(0L, Z_NULL, 0);
+        const auto result = crc32(adler, offset, DATASET_CHUNK);
+        state.SetBytesProcessed(state.bytes_processed() + DATASET_CHUNK);
+        benchmark::DoNotOptimize(result);
+    }
+}
+
+void zlib_adler(benchmark::State &state) {
+    while (state.KeepRunning()) {
+        const auto offset = DATASET.data() + (state.bytes_processed() % DATASET_SIZE);
+        const auto adler = adler32(0L, Z_NULL, 0);
+        const auto result = adler32(adler, offset, DATASET_CHUNK);
+        state.SetBytesProcessed(state.bytes_processed() + DATASET_CHUNK);
+        benchmark::DoNotOptimize(result);
+    }
+}
+
+BENCHMARK(zlib_adler);
+BENCHMARK(zlib_crc32);
+BENCHMARK(cryptopp<Hash::Adler>);
+BENCHMARK(cryptopp<Hash::CRC32>);
 BENCHMARK(cryptopp<Hash::MD4>);
 BENCHMARK(cryptopp<Hash::MD5>);
 BENCHMARK(cryptopp<Hash::SHA1>);
@@ -156,6 +203,8 @@ BENCHMARK(cryptopp<Hash::SHA256>);
 BENCHMARK(cryptopp<Hash::SHA384>);
 BENCHMARK(cryptopp<Hash::SHA512>);
 BENCHMARK(cryptopp<Hash::Whirlpool>);
+BENCHMARK(openssl<Hash::Adler>);
+BENCHMARK(openssl<Hash::CRC32>);
 BENCHMARK(openssl<Hash::MD4>);
 BENCHMARK(openssl<Hash::MD5>);
 BENCHMARK(openssl<Hash::SHA1>);
