@@ -7,7 +7,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(OpenSSL REQUIRED)
 find_package(ZLIB REQUIRED)
-find_package(ZLIB REQUIRED)
 find_package(benchmark REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(cryptopp REQUIRED IMPORTED_TARGET libcryptopp)
